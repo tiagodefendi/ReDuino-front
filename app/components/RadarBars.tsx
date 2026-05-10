@@ -22,7 +22,7 @@ export default function RadarBars({ distance, isActive, color }: RadarBarsProps)
       {Array.from({ length: BARS }, (_, i) => {
         const center = (BARS - 1) / 2;
         const spread = 1 - Math.abs(i - center) / center;
-        const t = isActive ? (1 - Math.min(distance / 200, 1)) : 0;
+        const t = isActive ? (1 - Math.min(distance / 80, 1)) : 0;
         const h = minH + (maxH - minH) * t * (0.3 + 0.7 * spread);
         return (
           <div

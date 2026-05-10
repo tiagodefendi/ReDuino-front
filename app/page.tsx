@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import PowerButton from "./components/PowerButton";
 import RadarBars from "./components/RadarBars";
@@ -9,37 +9,66 @@ const CarScene = dynamic(() => import("./components/CarScene"), { ssr: false });
 
 type AlertState = "idle" | "safe" | "warn" | "danger";
 
-interface SensorState {
-  distance: number;
-  alert: AlertState;
-  statusText: string;
-  beepsPerSec: string;
-  color: string;
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-function getSensorState(dist: number): SensorState {
-  if (dist > 120) return { distance: dist, alert: "safe", statusText: "SEGURO", beepsPerSec: "1", color: "var(--color-green)" };
-  if (dist > 60)  return { distance: dist, alert: "warn",  statusText: "ATENÇÃO", beepsPerSec: "3", color: "var(--color-amber)" };
-  if (dist > 25)  return { distance: dist, alert: "danger", statusText: "PERIGO", beepsPerSec: "8", color: "var(--color-red)" };
-  return { distance: dist, alert: "danger", statusText: "COLISÃO!", beepsPerSec: "∞", color: "var(--color-red)" };
-}
+const ALERT_COLORS: Record<AlertState, string> = {
+  idle:   "var(--color-muted)",
+  safe:   "var(--color-green)",
+  warn:   "var(--color-amber)",
+  danger: "var(--color-red)",
+};
 
-const ALERT_CONFIG = {
+const ALERT_CONFIG: Record<AlertState, { icon: string; text: string; borderColor: string }> = {
   idle:   { icon: "○", text: "SISTEMA PRONTO — AGUARDANDO ATIVAÇÃO", borderColor: "var(--color-border)" },
-  safe:   { icon: "●", text: "SEGURO — CONTINUE NORMALMENTE",          borderColor: "var(--color-green)" },
-  warn:   { icon: "◆", text: "ATENÇÃO — REDUZA A VELOCIDADE",          borderColor: "var(--color-amber)" },
-  danger: { icon: "▲", text: "PERIGO — PARE IMEDIATAMENTE",            borderColor: "var(--color-red)" },
+  safe:   { icon: "●", text: "SEGURO — CONTINUE NORMALMENTE",         borderColor: "var(--color-green)" },
+  warn:   { icon: "◆", text: "ATENÇÃO — REDUZA A VELOCIDADE",         borderColor: "var(--color-amber)" },
+  danger: { icon: "▲", text: "PERIGO — PARE IMEDIATAMENTE",           borderColor: "var(--color-red)" },
 };
 
 export default function HomePage() {
-  const [isActive, setIsActive] = useState(false);
-  const [sliderDist, setSliderDist] = useState(200);
+  const [isActive, setIsActive]     = useState(false);
+  const [distance, setDistance]     = useState<number | null>(null);
+  const [alert, setAlert]           = useState<AlertState>("idle");
+  const [statusText, setStatusText] = useState("--");
+  const [beepsPerSec, setBeepsPerSec] = useState("--");
 
-  const togglePower = useCallback(() => setIsActive((v) => !v), []);
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res  = await fetch(`${API_URL}/api/status`);
+        const data = await res.json();
+        setIsActive(data.active);
+        setDistance(data.distance);
+        setAlert((data.alert as AlertState) ?? "idle");
+        setStatusText(data.statusText ?? "--");
+        setBeepsPerSec(data.beepsPerSec ?? "--");
+      } catch {
+        // backend indisponível — mantém estado anterior
+      }
+    };
 
-  const sensor = getSensorState(sliderDist);
-  const alertCfg = isActive ? ALERT_CONFIG[sensor.alert] : ALERT_CONFIG.idle;
-  const displayColor = isActive ? sensor.color : "var(--color-muted)";
+    fetchStatus();
+    const id = setInterval(fetchStatus, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  const togglePower = useCallback(async () => {
+    try {
+      const res  = await fetch(`${API_URL}/api/toggle`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ active: !isActive }),
+      });
+      const data = await res.json();
+      setIsActive(data.active);
+    } catch (e) {
+      console.error("[ReDuino] toggle falhou:", e);
+    }
+  }, [isActive]);
+
+  const displayDist  = distance ?? 200;
+  const displayColor = ALERT_COLORS[alert];
+  const alertCfg     = ALERT_CONFIG[alert];
 
   return (
     <main style={{
@@ -133,9 +162,9 @@ export default function HomePage() {
           background: "#08090b",
         }}>
           <CarScene
-            distance={sliderDist}
+            distance={displayDist}
             isActive={isActive}
-            statusColor={sensor.color}
+            statusColor={displayColor}
           />
         </div>
 
@@ -149,9 +178,9 @@ export default function HomePage() {
           transition: "opacity 0.5s",
         }}>
           {[
-            { label: "DISTÂNCIA", value: isActive ? `${sliderDist}` : "--", unit: "cm", color: displayColor },
-            { label: "STATUS", value: isActive ? sensor.statusText : "--", unit: "", color: displayColor },
-            { label: "BEEPS/S", value: isActive ? sensor.beepsPerSec : "--", unit: "", color: displayColor },
+            { label: "DISTÂNCIA", value: isActive && distance !== null ? `${distance}` : "--", unit: "cm", color: displayColor },
+            { label: "STATUS",    value: statusText,  unit: "",   color: displayColor },
+            { label: "BEEPS/S",  value: beepsPerSec, unit: "",   color: displayColor },
           ].map(({ label, value, unit, color }) => (
             <div key={label} style={{
               background: "var(--color-surface2)",
@@ -187,12 +216,12 @@ export default function HomePage() {
           transition: "opacity 0.5s",
           marginBottom: "14px",
         }}>
-          <RadarBars distance={sliderDist} isActive={isActive} color={sensor.color} />
+          <RadarBars distance={displayDist} isActive={isActive} color={displayColor} />
         </div>
 
         {/* Alert bar */}
         <div
-          className={isActive && sensor.alert === "danger" ? "danger-blink" : ""}
+          className={isActive && alert === "danger" ? "danger-blink" : ""}
           style={{
             display: "flex",
             alignItems: "center",
@@ -203,40 +232,13 @@ export default function HomePage() {
             padding: "10px 14px",
             fontSize: "10px",
             letterSpacing: "2px",
-            color: isActive ? sensor.color : "var(--color-muted)",
+            color: displayColor,
             transition: "border-color 0.3s, color 0.3s",
             minHeight: "40px",
           }}
         >
           <span style={{ fontSize: "12px" }}>{alertCfg.icon}</span>
           <span>{alertCfg.text}</span>
-        </div>
-
-        {/* Simulator slider */}
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          marginTop: "16px",
-          opacity: isActive ? 1 : 0.3,
-          transition: "opacity 0.5s",
-        }}>
-          <span style={{ fontSize: "9px", letterSpacing: "2px", color: "var(--color-muted)", whiteSpace: "nowrap" }}>
-            SIMULAR DIST.
-          </span>
-          <input
-            type="range"
-            min="5"
-            max="200"
-            step="1"
-            value={sliderDist}
-            onChange={(e) => setSliderDist(Number(e.target.value))}
-            disabled={!isActive}
-            style={{ flex: 1, accentColor: "var(--color-green)", cursor: isActive ? "pointer" : "not-allowed" }}
-          />
-          <span style={{ fontSize: "9px", color: "var(--color-muted)", minWidth: "40px", textAlign: "right" }}>
-            {sliderDist}cm
-          </span>
         </div>
 
         {/* Footer */}

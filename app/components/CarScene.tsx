@@ -7,7 +7,7 @@ interface CarSceneProps {
 }
 
 export default function CarScene({ distance, isActive, statusColor }: CarSceneProps) {
-  const maxDist = 200;
+  const maxDist = 80;
   const minY = 85;
   const maxY = 158;
   const t = Math.min(distance / maxDist, 1);
@@ -18,7 +18,7 @@ export default function CarScene({ distance, isActive, statusColor }: CarScenePr
   const beamStartXs = [266, 276, 286, 296];
 
   const sensorColor = statusColor;
-  const showBeams = isActive && distance < 160;
+  const showBeams = isActive && distance < maxDist;
 
   return (
     <svg viewBox="0 0 560 210" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
